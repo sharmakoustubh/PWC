@@ -7,22 +7,19 @@ close all;
 load Signal5.mat
 fs= 44100;
 fc= 4000;
-Tsym= 2.2676e-3;  %Symbol time 
+Tsym= 2.2676e-3;   
 fsym=1/Tsym; 
 Tsamp=1/fs;
-u=0.00023;
 t=(0:Tsamp:Tsym-Tsamp); 
-alpha=6/100; 
 tot_data_bits=100000;
 
 %% Base Pulse yahan se naam change karne hai 
 
-data=round(rand(1,tot_data_bits));
-base_pulse = sin(2*pi*0.5*fsym*t); % generate basic pulse
+base_pulse = sin(2*pi*0.5*fsym*t); 
 Es=sum(abs(base_pulse).^2)*(1/fs);
-Pnorm=base_pulse/sqrt(Es);
+P_norm=base_pulse/sqrt(Es);
 figure (1);
-plot(t,Pnorm);
+plot(t,P_norm);
 
 %% Down conversion
 
@@ -32,9 +29,9 @@ Down_Q=R.*(-sin(2*pi*fc*t));
 
 %% matched filter implementation
 
-Match_I=conv(Down_I,Pnorm);
-Match_Q=conv(Down_Q,Pnorm);
-plot(sqrt(Match_I.^2+Match_Q.^2)); %plot the envelope
+Match_I=conv(Down_I,P_norm);
+Match_Q=conv(Down_Q,P_norm);
+plot(sqrt(Match_I.^2+Match_Q.^2));
 
 Signal = Match_I+i*Match_Q;
 [Peak start_pos]=max(abs(Signal));
