@@ -3,7 +3,7 @@ clc;
 clear all;
 close all;
 
-%% System variables 
+%% Given parameters
 
 fs=44100;
 fc=4000;
@@ -12,25 +12,22 @@ fsym=1/Tsym;
 Tsamp=1/fs;
 u=0.00023;
 t=(0:Tsamp:Tsym-Tsamp); 
-alpha=6/100; 
+alpha=3/100; 
 tot_data_bits=100000;
-
-%% Base Pulse
+%% Generate Base Pulse
 
 data=round(rand(1,tot_data_bits));
-base_pulse = sin(2*pi*0.5*fsym*t); % generate basic pulse
+base_pulse = sin(2*pi*0.5*fsym*t); 
 Es=sum(abs(base_pulse).^2)*(1/fs);
 Pnorm=base_pulse/sqrt(Es);
 figure (1);
 plot(t,Pnorm);
+%% Mapping to complex symbol
 
-%% Map to complex signals
-
-data_one_minus_one=data*2-1; % Map 0 to -1, 1 to 1
+data_one_minus_one=data*2-1;
 I_data=data_one_minus_one(1:2:end-1);
 Q_data=data_one_minus_one(2:2:end);
-QPSK_bits= -I_data-1i*Q_data; % Map to symbol
-
+QPSK_bits= -I_data-1i*Q_data; 
 %% Modulation
 
 QPSK_pulse=Pnorm'*QPSK_bits;
@@ -40,13 +37,11 @@ Msglength=length(data)/2;
 Realpart=real(QPSK_pulse_train); 
 Imagpart=imag(QPSK_pulse_train);
 t1=(0:Tsamp:101*Msglength*Tsamp-Tsamp); 
-
 %% Up conversion
 
 I=Realpart.*cos(2*pi*fc*t1); 
 Q=Imagpart.*-sin(2*pi*fc*t1);
-Y=sqrt(2).*(I+Q); %transmitted complex signal
-
+Y=sqrt(2).*(I+Q); 
 %% SNR and channel parameters
 
 SNR_dB=0:1:15;    
@@ -56,20 +51,15 @@ Ch = zeros(1,length(No));
 BER= zeros(1,length(No));
 Ch(1) = 1/(sqrt(1+alpha.^2));
 Ch(end) = alpha*(1/(sqrt(1+alpha.^2)));
-
 %% Transmission and reception
 
 j=0;
 for CurrNo = No 
-
 Var=(CurrNo/2)*fs;
 Noise=randn(1,Modbitslength).*sqrt(Var);
 j=j+1;
-
 convchannel=conv(Ch, Y);
-R=convchannel(1:Modbitslength)+Noise; %here we add the noise
-
-%% Demodulation and Down conversion
+R=convchannel(1:Modbitslength)+Noise; 
 
 I_rx=R.*cos(2*pi*fc*t1);
 Q_rx=R.*(-sin(2*pi*fc*t1));
@@ -82,8 +72,6 @@ for k=1:tot_data_bits/2
     I_sampled(k)=I_matchedfilter(1,101*k);
     Q_sampled(k)=Q_matchedfilter(1,101*k);
 end
-
-
 Total_sampled=[I_sampled, Q_sampled];
 
 for k=1:length(I_sampled)   
@@ -104,20 +92,15 @@ end
 DecodedSignal = [DecodedSignal_I; DecodedSignal_Q];    
 Decoded_bits = reshape(DecodedSignal,1,numel(DecodedSignal));
 
-%% Error Detection
-% 
 [errors,error_rate]=biterr(data,Decoded_bits);
 error(j)=errors;
 error_sum(j)=errors/length(data);
-
-BER(j)= error_rate
+BER(j)= error_rate;
 end
-
 %% Plot The BER vs SNR
 ber= BER/tot_data_bits;
 figure (15)
-semilogy(SNR_dB,BER); % ber %error_sum
+semilogy(SNR_dB,BER); 
 title('BER vs SNR') 
-ylabel('BER') % x-axis label
-xlabel('Eb/No [dB]') % y-axis label
-
+ylabel('BER') 
+xlabel('Eb/No [dB]') 
