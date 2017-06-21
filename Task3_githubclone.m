@@ -5,50 +5,29 @@ load('signal3.mat')
 
 %% System parameters
 
-fs = 44100; % The sapling Frequency
-fc = 10000; % The carrier frequency
-Tsym = 58e-3; % The symbol Time for 1 OFDM
-Nsc=128; % 128 subcarriers
-Ncp=20; %  20 the cyclic lenght
-
-% R is the received signal from the signal 3 and t is the time taken from
-% signal 3
+fs = 44100;
+fc = 10000;
+Tsym = 58e-3;
+Nsc=128; 
+Ncp=20; 
 %% Downconversion of the signal
 
 Down_I= sqrt(2).*(R.*cos(2*pi*fc*t));
 Down_Q=sqrt(2).*(-R.*sin(2*pi*fc*t));
 
-
 %% Digital to Analog conversions
-% A low pass filter(Butterworth filter)
-%load 'Butter.mat';
-[B, A]=butter(7,0.05); % designs a lowpass,Butterworth filter, 7.0 is the filter order - integer scalar, 0.05 is the cutoff frequency and low is the filtertype
-%[B, A]=butter(8,0.05);
 
-FilteredSignal_I=filter(B, A, Down_I); % filters the input data, Down_I, using a rational transfer function defined by the numerator and denominator coefficients B and a, respectively.
-FilteredSignal_Q=filter(B, A, Down_Q); % filters the input data, Down_I, using a rational transfer function defined by the numerator and denominator coefficients B and a, respectively.
+[B, A]=butter(7,0.05); 
+FilteredSignal_I=filter(B, A, Down_I);
+FilteredSignal_Q=filter(B, A, Down_Q);
 FilteredSignal =(FilteredSignal_I  +(1i.*FilteredSignal_Q));
-
 figure()
 plot(abs(FilteredSignal));
 
 %% Sampling the data
-% Sampling convert analog to signal, sampling frequency is 20 time larger
-% than our frequency of our sample is ok if its before or after. Sampling
-% frequency much larger than the data
- % rounds each element of X to the nearest integer greater than or equal to that element.
-Ts = round((Tsym/Nsc)*fs);
-SampledSignal =FilteredSignal(1:Ts:end); % so there will be 6353
 
-% Computing Mye(t) and Normalizing it to 1
-% for t1=1:length(SampledSignal)-(Nsc);
-%     % To comute mye
-%     OFDM_sig =(SampledSignal(t1:t1+Nsc/2)*(SampledSignal(t1+Nsc/2:t1+Nsc))');
-%     mye_sum=sum(OFDM_sig);
-%     % to normalize to 1
-%     del = (sqrt(sum(abs(SampledSignal(t1:t1+Nsc/2)).^2))*sqrt(sum(abs(SampledSignal(t1+Nsc/2:t1+2*Nsc/2).^2))));
-%     delay(t1) = mye_sum/del;
-% end
+Ts = round((Tsym/Nsc)*fs);
+SampledSignal =FilteredSignal(1:Ts:end); 
 
 for t1=1:length(SampledSignal)-(Nsc); 
     m=SampledSignal(t1:t1+(Nsc/2));
@@ -56,9 +35,6 @@ for t1=1:length(SampledSignal)-(Nsc);
     n1=conj(n);
     delay(t1)=abs(sum(m.*n1)/(sqrt(sum((abs(m).^2)))*sqrt(sum((abs(n1).^2)))));
 end
- 
-% [pilot pos]=max(abs(Q));
-% sync_rec_signal=Sampled(pos-5:end);
 
 %% Removing cyclic prefix and FFT
 
@@ -77,70 +53,52 @@ FFT_Pilot=fft(PilotSignal);
 x=zeros(1,Nsc); 
 randn('state',100);
 P=sign(randn(1,Nsc/2));
-x2=2*P; % the transmitted signal
+x2=2*P; 
 x(1:2:end)=x2;
-%Half of the sub channel have pilot symbol
-% the other half is based on interpolation
-channel=FFT_Pilot(1:2:end)./x2; % Every second pilot is 0 --> 64
-channel_2=interp1((1:2:Nsc),channel,1:Nsc); % The Interpolate to have 128
-
-%plot (1:2:128,abs(channel), 'or');
-
-%% The demodulation
+Channel1=FFT_Pilot(1:2:end)./x2;
+Channel2=interp1((1:2:Nsc),Channel1,1:Nsc);
+%% remove the effect of the channel
 
 for i=1:size(FFT_Signal,1)
-    % dividing the received message by channel
-    de_mod(i,:) = FFT_Signal(i,:)./channel_2; 
+     QPSK_Symbols(i,:) = FFT_Signal(i,:)./Channel2; 
 end
 
-% to create one row matrix
-demod=(reshape(de_mod',[],1))'; 
 
-% To convert to -1 and 1
-decode_I=sign(real(demod)); 
-decode_Q=sign(imag(demod));
+Signal_Transmitted=(reshape(QPSK_Symbols',[],1))'; 
+I_part=sign(real(Signal_Transmitted)); 
+Q_part=sign(imag(Signal_Transmitted));
 
-
-% bits received I
-bits_rec_I=zeros(1,length(decode_I));
-for j=1:length(decode_I)
-    if (decode_I(j)==1)
-        bits_rec_I(j)=0;
+for k=1:length(I_part)   
+    if (I_part(k)>0)
+        m(k)= 0;
     else
-        bits_rec_I(j)=1;
+        m(k)=1;
     end
-end  
-
-% Bits received Q 
-bits_rec_Q=zeros(1,length(decode_Q));
-for j=1:length(decode_Q)
-    if (decode_Q(j)==1)
-        bits_rec_Q(j)=0;
+end
+for k=1:length(Q_part)  
+    if (Q_part(k)>0)
+        n(k)= 0;
     else
-        bits_rec_Q(j)=1;
+        n(k)=1;
     end
-end 
+end
+    
+Demod_bits = [m; n];    
+Demod_bits_stream = reshape(Demod_bits,1,numel(Demod_bits));
+%% Viterbi decoding
 
-symbol_bits=[bits_rec_I;bits_rec_Q];
-
-received_bits=reshape(symbol_bits,1,[]); % To get the bits in one row
-        
-%% Trellis code 
-
-% The Viterbi Algorithm is used (vitdec.m)
-% rate 1/2 convolutional encoder
-trellscode=poly2trellis(6,[77 45]); % constraint length=6 5 delay states +1
-tblen=6*5;
-% we assume that the encoder starts and ends in the all-zero state
-decoded=vitdec(received_bits,trellscode,tblen,'term','hard'); % terminate at zero state -> binary input(1's & 0's)
+const_length=6; 
+Trellis =poly2trellis(const_length,[77,45]); 
+TB_length=6*5;
+decoded_bits=vitdec(Demod_bits_stream,Trellis,TB_length,'term','hard'); 
 
 %% Decoding the message
 
-length_Message=bi2de(decoded(1:10)); % The lenght of the message
-f_bits=decoded(Nsc+1:end); 
+Msg_length=bi2de(decoded_bits(1:10));
+Msg_bits=decoded_bits(Nsc+1:end); 
 wh=2.^[6:-1:0];
-Message=char(f_bits(1:7)*wh');
-for l=2:length_Message; %floor(length(f_bits)/7),
-Message=[Message char(f_bits(7*(l-1)+1:7*l)*wh')];
+m=char(Msg_bits(1:7)*wh');
+for l=2:Msg_length; 
+m=[m char(Msg_bits(7*(l-1)+1:7*l)*wh')];
 end 
-Message
+m
