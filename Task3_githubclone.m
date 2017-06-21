@@ -10,21 +10,21 @@ fc = 10000;
 Tsym = 58e-3;
 Nsc=128; 
 Ncp=20; 
-%% Downconversion of the signal
+%% Down-conversion 
 
-Down_I= sqrt(2).*(R.*cos(2*pi*fc*t));
-Down_Q=sqrt(2).*(-R.*sin(2*pi*fc*t));
+I_part_down= sqrt(2).*(R.*cos(2*pi*fc*t));
+Q_part_down=sqrt(2).*(-R.*sin(2*pi*fc*t));
 
-%% Digital to Analog conversions
+%% Filtering
 
 [B, A]=butter(7,0.05); 
-FilteredSignal_I=filter(B, A, Down_I);
-FilteredSignal_Q=filter(B, A, Down_Q);
+FilteredSignal_I=filter(B, A, I_part_down);
+FilteredSignal_Q=filter(B, A, Q_part_down);
 FilteredSignal =(FilteredSignal_I  +(1i.*FilteredSignal_Q));
 figure()
 plot(abs(FilteredSignal));
 
-%% Sampling the data
+%% Sampling 
 
 Ts = round((Tsym/Nsc)*fs);
 SampledSignal =FilteredSignal(1:Ts:end); 
@@ -40,29 +40,28 @@ end
 
 [Corr start_pos]= max(delay);
 PilotSignal=SampledSignal(start_pos:start_pos+Nsc-1);
-OFDM_blocks = round(length(SampledSignal(start_pos+Nsc:end))/(Nsc+Ncp))-1;
+OFDM_Blocks = round(length(SampledSignal(start_pos+Nsc:end))/(Nsc+Ncp))-1;
 
-for i=1: OFDM_blocks 
+for i=1: OFDM_Blocks 
    OFDM_chunk = SampledSignal(start_pos+(Nsc+Ncp)*i:start_pos+(Nsc+Ncp)*i+Nsc-1);
    FFT_Signal(i,:) = fft(OFDM_chunk);
 end
 
 FFT_Pilot=fft(PilotSignal); 
-%% generating known pilot
+%% Pilot generation
 
-x=zeros(1,Nsc); 
+x1=zeros(1,Nsc); 
 randn('state',100);
 P=sign(randn(1,Nsc/2));
 x2=2*P; 
-x(1:2:end)=x2;
+x1(1:2:end)=x2;
 Channel1=FFT_Pilot(1:2:end)./x2;
 Channel2=interp1((1:2:Nsc),Channel1,1:Nsc);
-%% remove the effect of the channel
+%% remove the effect of the channel and demod
 
 for i=1:size(FFT_Signal,1)
      QPSK_Symbols(i,:) = FFT_Signal(i,:)./Channel2; 
 end
-
 
 Signal_Transmitted=(reshape(QPSK_Symbols',[],1))'; 
 I_part=sign(real(Signal_Transmitted)); 
@@ -92,7 +91,7 @@ Trellis =poly2trellis(const_length,[77,45]);
 TB_length=6*5;
 decoded_bits=vitdec(Demod_bits_stream,Trellis,TB_length,'term','hard'); 
 
-%% Decoding the message
+%% ASCII message
 
 Msg_length=bi2de(decoded_bits(1:10));
 Msg_bits=decoded_bits(Nsc+1:end); 
