@@ -1,4 +1,4 @@
-function Tx_func(input1)
+function Tx_func(message)
 
 fs = 44100;               
 fc = 10e03;               
@@ -11,7 +11,7 @@ Rs = 1/(Tsym/Nsc);
 
 %% CRC
 CRC_bits = comm.CRCGenerator([16 15 2 0],'CheckSumsPerFrame',1);
-CRC_data = step(CRC_bits, input1')';
+CRC_data = step(CRC_bits, message')';
 Data_len = numel(CRC_data);
 
 %% Convolutional coding
