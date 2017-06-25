@@ -1,19 +1,16 @@
-function[Rx_ncrc, Crc_error] =Rx_func_KB(input2)                              
+function[SignalwithCRC, Error] =Rx_func_KB(input2)                              
                                                                            
-fs = 44100;                % signal frequency
-fc = 10e03;                % carrier frequency
-Nsc = 128;                 % number of subcarriers
-Ncp = 20;                  % length of cyclic prefix
-N = Nsc+Ncp;              % symbol length              
-Tsym = 58e-3;             % 1 ofdm symbol time
-Rs = 1/(Tsym/Nsc);      % ofdm signal sampling rate
+fs = 44100;                
+fc = 10e03;                
+Nsc = 128;                 
+Ncp = 20;                  
+N = Nsc+Ncp;              
+Tsym = 58e-3;             
+Rs = 1/(Tsym/Nsc);      
 
 recorder=audiorecorder(fs,16,1);
 recordblocking(recorder,18);
 R=getaudiodata(recorder); 
-
-%figure(1)
-%plot(R)
 
 %% DOWN-conversion
 
@@ -23,7 +20,7 @@ t1 = (1:length(Rsig))/fs;
 I_part_down = Rsig.*cos(2*pi*fc*t1).*sqrt(2);
 Q_part_down = Rsig.*(-sin(2*pi*fc*t1).*sqrt(2));
 
-Rx_sig = Rx_sig_i + 1j*Rx_sig_q;
+Rx_sig = I_part_down + 1j*Q_part_down;
 
 [B,A] = butter(8,Rs/fs,'low');                                
 FilteredSignal = filter(B,A,Rx_sig);                                        
@@ -37,76 +34,104 @@ SampledSignal = FilteredSignal(1:Ts:end);
 T_per = Nsc/2;
 delay = zeros(1,length(SampledSignal)-2*T_per);
  
-for t1=1:(length(SampledSignal)-Nsc)
-    
-     a = SampledSignal(t1:t1+(Nsc/2));
-     b = conj(SampledSignal(t1+(Nsc/2):t1+2*(Nsc/2)-1));
-     c = sqrt(sum(abs(SampledSignal(t1:t1+(Nsc/2)-1).^2)));
-     d = sqrt(sum(abs(SampledSignal(t1+(Nsc/2):t1+2*(Nsc/2)-1).^2)));
-
-     nom = sum(a.*b);
-     denom = c*d;
-     delay(t1) = nom/denom;
-end
-
-Pilot_pos = find(delay == max(delay));
+% for t1=1:(length(SampledSignal)-Nsc)
+%     
+%      m = SampledSignal(t1:t1+(Nsc/2)-1);
+%      n = conj(SampledSignal(t1+(Nsc/2):t1+Nsc-1));
+%      c = sqrt(sum(abs(SampledSignal(t1:t1+(Nsc/2)-1).^2)));
+%      d = sqrt(sum(abs(SampledSignal(t1+(Nsc/2):t1+2*(Nsc/2)-1).^2)));
+% 
+%      nom = sum(m.*n);
+%      denom = c*d;
+%      delay(t1) = nom/denom;
+% end
  
-N_ofdm = floor(length(SampledSignal(Pilot_pos:end))/N);
+ 
+for t1=1:(length(SampledSignal)-Nsc)
+    m=SampledSignal(t1:t1+(Nsc/2)-1);
+    n=SampledSignal(t1+(Nsc/2):t1+Nsc-1);
+    n1=conj(n);
+    delay(t1)=abs(sum(m.*n1)/(sqrt(sum((abs(m).^2)))*sqrt(sum((abs(n1).^2)))));
+end
+  
 
-%%  Removing [CP], S/P
-Rx_qpsk_cp = zeros(N_ofdm,Nsc);
+% for t1=1:length(SampledSignal)-(Nsc); 
+%     m=SampledSignal(t1:t1+(Nsc/2));
+%     n=SampledSignal(t1+(Nsc/2):t1+Nsc);
+%     n1=conj(n);
+%     delay(t1)=abs(sum(m.*n1)/(sqrt(sum((abs(m).^2)))*sqrt(sum((abs(n1).^2)))));
+% end
 
-for i=1:N_ofdm-1
-    Rx_qpsk_cp(i,:) = SampledSignal(1,(Pilot_pos + N*(i-1)):(Pilot_pos + N*(i-1) + Nsc - 1));
+%% Removing cyclic prefix and FFT
+
+%start_pos = find(delay == max(delay));
+[Corr start_pos]= max(delay);
+OFDM_Blocks = floor(length(SampledSignal(start_pos:end))/N);
+
+OFDM_chunk = zeros(OFDM_Blocks,Nsc);
+
+for i=1:OFDM_Blocks-1
+    OFDM_chunk(i,:) = SampledSignal(1,(start_pos + N*(i-1)):(start_pos + N*(i-1) + Nsc - 1));
 end
 
-%% --- STAGE 5c': FFT
-Rx_ofdm_fft = zeros(N_ofdm,Nsc);
+FFT_Signal = zeros(OFDM_Blocks,Nsc);
 
-for i=1:N_ofdm
-    Rx_ofdm_fft(i,:) = fft(Rx_qpsk_cp(i,:));
+for i=1:OFDM_Blocks
+    FFT_Signal(i,:) = fft(OFDM_chunk(i,:));
 end
 
-% --- STAGE 5b': P/S
-Rx_fft_ser = reshape(transpose(Rx_ofdm_fft),1,numel(Rx_ofdm_fft)); % reshape(transp(Rx_ofdm_fft),1,numel(Rx_ofdm_fft)); kb 24 june
+Full_FFT_Signal = reshape(transpose(FFT_Signal),1,numel(FFT_Signal)); % reshape(transp(Rx_ofdm_fft),1,numel(Rx_ofdm_fft)); kb 24 june
 
-% --- STAGE 5a': Channel Estimation based on pilots
+%% Pilot generation
+
 randn('state',100);
 P = sign(randn(1,Nsc/2));
 
-Qpsk_ch_tmp = Rx_fft_ser(1:Nsc);
-Alpha = Qpsk_ch_tmp(1:2:end)./(2*P);
-Alpha_int = interp1((1:2:Nsc),Alpha,(1:Nsc));
-Alpha_int(128) = Alpha(63);                                                % interpolation error - shift picture ->(*)
+FFT_Pilot = Full_FFT_Signal(1:Nsc);
+Channel1 = FFT_Pilot(1:2:end)./(2*P);
+Channel2 = interp1((1:2:Nsc),Channel1,(1:Nsc));
+Channel2(128) = Channel1(63);                                                % interpolation error - shift picture ->(*)
 
-for i=1:N_ofdm-1
-    Qpsk_Rx_ch(Nsc*(i-1)+1:Nsc*i) = Rx_fft_ser(Nsc*(i-1)+1:Nsc*i)./Alpha_int;
+for i=1:OFDM_Blocks-1
+    QPSK_Symbols(Nsc*(i-1)+1:Nsc*i) = Full_FFT_Signal(Nsc*(i-1)+1:Nsc*i)./Channel2;
 end
 
 %% --- Stage 4': QPSK demodulation
-Qpsk_Rx_tmp = Qpsk_Rx_ch(Nsc+1:end);                                      % removing interpolation shift error (*)
-z_i = real(Qpsk_Rx_tmp);
-z_q = imag(Qpsk_Rx_tmp);
+Signal_Transmitted = QPSK_Symbols(Nsc+1:end);                                      % removing interpolation shift error (*)
 
-z_i(z_i > 0) = 0;
-z_i(z_i < 0) = 1;
+I_part=sign(real(Signal_Transmitted)); 
+Q_part=sign(imag(Signal_Transmitted));
 
-z_q(z_q > 0) = 0;
-z_q(z_q < 0) = 1;
+for k=1:length(I_part)   
+    if (I_part(k)>0)
+        m(k)= 0;
+    else
+        m(k)=1;
+    end
+end
+for k=1:length(Q_part)  
+    if (Q_part(k)>0)
+        n(k)= 0;
+    else
+        n(k)=1;
+    end
+end
+    
+Demod_bits = [m; n];    
+Demod_bits_stream = reshape(Demod_bits,1,numel(Demod_bits));
 
-Qpsk_Rx_demod = [z_i;z_q];
-Rx_demod = reshape(Qpsk_Rx_demod,1,numel([z_i,z_q]));
 
-%% --- STAGE 3': (77,45) R=1/2 Concolutional Decoder
-code = poly2trellis(6, [77 45]);
-L_tb = 6*5;
-Pic_Rx_ascii = vitdec(Rx_demod, code, L_tb,'term','hard');
-Pic_Rx_ascii = Pic_Rx_ascii(1:input2 + 16); 
+%% (77,45) R=1/2 Concolutional Decoder
+const_length=6; 
+Trellis = poly2trellis(const_length, [77 45]);
+TB_length = 6*5;
+decoded_bits = vitdec(Demod_bits_stream, Trellis, TB_length,'term','hard');
+decoded_bits_fix = decoded_bits(1:input2 + 16); 
 
-%% --- STAGE 2': CRC detedction
-Crc_detec = comm.CRCDetector([16 15 2 0],'CheckSumsPerFrame',1);
-[Rx_crc, Crc_error] = step(Crc_detec, Pic_Rx_ascii');
-Rx_ncrc = Rx_crc';
+%% CRC detedction
+CRC_Detector = comm.CRCDetector([16 15 2 0],'CheckSumsPerFrame',1);
+[Signal_CRC, Error] = step(CRC_Detector, decoded_bits_fix');
+SignalwithCRC = Signal_CRC';
 
 %% --- STAGE 1': reshape msg, show picture
 % Picture_Rx_crc = reshape(Rx_ncrc,143,144);
