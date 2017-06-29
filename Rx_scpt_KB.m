@@ -1,117 +1,110 @@
 clear all;
 close all;
-warning('off');
-
+%warning('off');
 tic;
-Header = 10;
-Data = 25;
-Rx_buffer = Header + Data;
-m = 0;
-
 Ack = [1 1 1 1 1];
 Nack = [1 0 1 0 1];
-Picture_data = [];
+Img_bits = [];
+Packet_size_info = 10;
+data = 25;
+Total_packet_size = Packet_size_info + data;
+i = 0;
 
-%% Control Packet Rx & decoding
+%% Synchronisation
 while(1)
+    %% receive sync packets-------------
     while(1)
-        T_RxSyn = floor(rem(toc, 10));
-        if(T_RxSyn == 4)
-            disp('Listening for Control Packet...');
+        Time_taken = floor(rem(toc, 10));
+        if(Time_taken == 4)
+            toc
+            fprintf('\nWaiting for Sync Packet \n');
             break;
         end
     end
-    
-   [Rx_bits_CP, Rx_CRC_CP] = Rx_func(15);
-      
-   if(Rx_CRC_CP == 0)
-       disp('Control Packet Correct');
-       m = 1;
-       str_conf = [num2str(bi2de(Rx_bits_CP(10:end))) ' Packets, ' num2str(bi2de(Rx_bits_CP(1:9))) ' bit per Packet'];
-       disp(str_conf);
-       pause(1);
-       
-       while(1)
-             T_RxSyn = floor(rem(toc, 10));
-             if(T_RxSyn == 9)
-                 disp('Sending ACK...');
-                 disp(' ');
-                 break;
-             end
-       end
-       
-       pause(1);
-       Tx_func(Ack);
-       break;
-       
-   else
-       disp('Control Packet Error');
-       pause(2);
-       
-       while(1)
-             T_RxSyn = floor(rem(toc, 10));
-             if(T_RxSyn == 9)
-                 disp('Sending NACK...');
-                 disp(' ');
-                 break;
-             end
-       end
-       
-       Tx_func(Nack);       
-   end   
-end
-
-while(1)
-    while(1)
-        T_RxSyn = floor(rem(toc, 10));
-        if(T_RxSyn == 4)
-            str = ['Listening for Picture Packet #' num2str(m)];
-            disp(str);
-            break;
+    [Received_data, Errors] = Rx_func_KB(15);
+    if(Errors == 0)
+        fprintf('Sync Packet was correct \n');
+        i = 1;
+        String1 = [num2str(bi2de(Received_data(10:end))) ' Packets \n'];
+        fprintf(String1);
+        pause(1);
+        while(1)
+            Time_taken = floor(rem(toc, 10));
+            if(Time_taken == 9)
+                toc
+                fprintf('\nTransmitting ACK \n');
+                
+                break;
+            end
         end
-    end
-    
-    [Rx_bits, Rx_CRC] = Rx_func(Rx_buffer);
-    
-    %Rx_bits
-    
-    if(Rx_CRC == 0)
-       str2 = ['Packet #' num2str(bi2de(Rx_bits(1:10))) ' correct'];
-       disp(str2);
-       
-       Picture_data = [Picture_data Rx_bits(Header+1:Rx_buffer)];
-       
-       while(1)
-             T_RxSyn = floor(rem(toc, 10));
-             if(T_RxSyn == 9)
-                 disp('Sending ACK...');
-                 disp(' ');
-                 break;
-             end
-       end
-        
-       Tx_func(Ack);
-       m = bi2de(Rx_bits(1:10));
-       m = m+1;
-       %break;
-                 
+        pause(1);
+        Tx_func_KB(Ack);
+        break;
     else
-       str3 = ['Packet #' num2str(m) ' Error'];
-       disp(str3);
-       pause(2);
-       
-       while(1)
-             T_RxSyn = floor(rem(toc, 10));
-             if(T_RxSyn == 8)
-                 disp('Sending NACK...');
-                 disp(' ');
-                 break;
-             end
-       end
-       
-       Tx_func(Nack);
+        fprintf(' \nSync Packet Error \n');
+        pause(2);
+        while(1)
+            Time_taken = floor(rem(toc, 10));
+            if(Time_taken == 9)
+                toc
+                fprintf('Transmitting NACK \n');
+                fprintf(' ');
+                break;
+            end
+        end
+        Tx_func_KB(Nack);
     end
 end
-
-Picture_Rx_crc = reshape(Picture_data,10,10);
-imshow(Picture_Rx_crc)
+%% Receiving Image packets
+while(1)
+    %% receive image data packets-------------
+    while(1)
+        Time_taken = floor(rem(toc, 10));
+        if(Time_taken == 4)
+            toc
+            String2 = ['Waiting for data Packet: ' num2str(i),'\n'];
+            fprintf(String2);
+            break;
+        end
+    end
+    [Received_data, Errors] = Rx_func_KB(Total_packet_size);
+    %% Transmit ACK or NACK-------------
+    if(Errors == 0)
+        String3 = ['Packet:' num2str(bi2de(Received_data(1:10))) ' correct \n'];
+        fprintf(String3);
+        Img_bits = [Img_bits Received_data(Packet_size_info+1:Total_packet_size)];
+        while(1)
+            Time_taken = floor(rem(toc, 10));
+            if(Time_taken == 9)
+                toc
+                fprintf('Transmitting ACK \n');
+                break;
+            end
+        end
+        Tx_func_KB(Ack);
+        i = bi2de(Received_data(1:10));
+        i = i+1;
+        
+    else
+        String4 = [' \nPacket:' num2str(i) ' Error \n'];
+        fprintf(String4);
+        pause(2);
+        while(1)
+            Time_taken = floor(rem(toc, 10));
+            if(Time_taken == 8)
+                toc
+                fprintf('Transmitting NACK \n');
+                break;
+            end
+        end
+        Tx_func_KB(Nack);
+    end
+    if (i==5)
+        Image = reshape(Img_bits,10,10);
+        imshow(Image)
+        break;
+    end
+    
+end
+Image = reshape(Img_bits,10,10);
+imshow(Image)

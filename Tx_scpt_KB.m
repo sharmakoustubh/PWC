@@ -1,101 +1,89 @@
 clear all;
 close all;
-warning('off');
+%warning('off');
 
 tic;
-n = 1;
-
-Header = 10;
-Data = 25;
-
-%% Image read & conversion
-Picture = imread('test2.bmp');
-Nr_packets = ceil(numel(Picture)/Data);
+%% read image
+image = imread('test2.bmp');
 Ack = [1 1 1 1 1];
+i = 1;
+Packet_size_info = 10;
+data = 25;
+NoOfPackets = ceil(numel(image)/data);
+Len_packet = de2bi(data + Packet_size_info,9);
+Number_packet = de2bi(NoOfPackets,6);
+Sync_packet = [Len_packet Number_packet];
 
-%% Control Packet
-L_pack_bin = de2bi(Data + Header,9);
-Nr_pack_bin = de2bi(Nr_packets,6);
-
-C_pack = [L_pack_bin Nr_pack_bin];
-
-%% Synchro & trans of Control Packet
-str0 = ['Total Packets: ' num2str(Nr_packets) ', Packet length: ' num2str(Data + Header)];
-disp(str0);
-
-while(1)
-    while(1)
-        T_TxSyn = floor(rem(toc, 10));
-        if(T_TxSyn == 4)
-            disp('Sending Control Packet...');
-            break;
-        end
-    end
-    
-    Tx_func(C_pack);
-    disp('Control Packet sent.');
-        
-    while(1)
-        T_TxSyn = floor(rem(toc, 10));
-        if(T_TxSyn == 9)
-            disp('Receiving ANS for Control Packet...');
-            break;
-        end
-    end  
-  
-    [Rx_bits_CP, Rx_CRC_CP] = Rx_func(5);     
-    
-     if(Rx_bits_CP == Ack)
-         disp('ACK Received');
-         disp(' ');
-         break;
-     else
-         disp('NACK Received');
-         disp(' ');
-     end
-end
+%% Synchronisation
+String1 = [' \nTotal Packets to be tranmitted are: ' num2str(NoOfPackets),'\n'];
+fprintf(String1);
 
 while(1)
+    %% send sync packets-------------
     while(1)
-        Pic_pack = [de2bi(n,10) Picture((n-1)*Data+1:n*Data)]; 
-        T_TxSyn = floor(rem(toc, 10));
-        if(T_TxSyn == 4)
-            str = ['Sending Picture Packet #' num2str(n)];
-            disp(str);
+        Time_taken = floor(rem(toc, 10));
+        if(Time_taken == 4)
+            toc
+            fprintf('Transmitting Sync Packet \n');
             break;
         end
     end
-    
-    Tx_func(Pic_pack);
-    str2 = ['Picture Packet #',num2str(n),' sent'];
-    disp(str2);
-    
+    Tx_func_KB(Sync_packet);
+    fprintf(' \ndone  \n');
+    %% wait for ACK or NACK from Receiver-------------
     while(1)
-        T_TxSyn = floor(rem(toc, 10));
-        if(T_TxSyn == 8)
-            str3 = ['Receiving ANS for Picture Packet #' num2str(n) ' ...'];
-            disp(str3);
+        Time_taken = floor(rem(toc, 10));
+        if(Time_taken == 9)
+            toc
+            fprintf('\nWaiting for ACK or NACK for Sync Packet \n');
             break;
         end
     end
-    
-    [Rx_bits, Rx_CRC] = Rx_func(5);
-     
-    if(Rx_bits == Ack)
-         disp('ACK Received');
-         disp(' ');
-         n = n+1;               
+    [ACKorNACK, Error] = Rx_func_KB(5);
+    if(ACKorNACK == Ack)
+        fprintf('ACK Received \n');
+        break;
     else
-         disp('NACK Received');
-         disp(' ');
+        fprintf('\nNACK Received or no response received \n');
     end
-    
-        
-    if(n == Nr_packets +1)
-       disp('Picture sent');
-       break;
+end
+%% Sending Image packets
+while(1)
+    %% send data packets-------------
+    while(1)
+        Data_packet = [de2bi(i,10) image((i-1)*data+1:i*data)];
+        Time_taken = floor(rem(toc, 10));
+        if(Time_taken == 4)
+            toc
+            String2 = ['\nTransmitting data Packet:' num2str(i)];
+            fprintf(String2);
+            break;
+        end
     end
-        
-    
+    Tx_func_KB(Data_packet);
+    String3 = [' \nData Packet ',num2str(i),' sent'];
+    fprintf(String3);
+    %% wait for ACK or NACK from Receiver-------------
+    while(1)
+        Time_taken = floor(rem(toc, 10));
+        if(Time_taken == 8)
+            toc
+            String4 = [' \nWaiting for ACK or NACK for data Packet:' num2str(i)];
+            fprintf(String4);
+            break;
+        end
+    end
+    [Rx_bits, Error] = Rx_func_KB(5);
+    if(Rx_bits == Ack)
+        fprintf(' \nACK Received');
+        fprintf(' ');
+        i = i+1;
+    else
+        fprintf(' \nNACK  or no response received \n');
+    end
+    if(i == NoOfPackets +1)
+        fprintf(' \nImage transferred');
+        break;
+    end
 end
 
